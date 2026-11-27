@@ -60,18 +60,26 @@ func TestLinearize(t *testing.T) {
 		testTrue(t, err == nil)
 
 		g1 := g0.Linearize(0.005)
-		lg := g1.Core.(*colorgrad.LinearGradient)
+		testTrue(t, g1.Core.(*colorgrad.LinearGradient).Mode() == colorgrad.BlendRgb)
 
-		test(t, iterCount(lg.Stops()), 21)
-
-		expected := []string{
-			"#0000ff", "#242cf0", "#3c3de0", "#5146d2", "#654fc3", "#7752b7",
-			"#8955aa", "#9a589e", "#ab5b92", "#b95e8a", "#c86082", "#d5647c",
-			"#e06a7a", "#ea7179", "#f27b7c", "#f98581", "#fd9088", "#ff9c90",
-			"#ffa898", "#ffb3a1", "#ffbfaa", "#ffcbb3", "#ffd5b9", "#ffdebe",
-			"#ffe6c0", "#ffedc0", "#fff2bb", "#fff6b5", "#fffaaf", "#fffca3",
-			"#fffd96", "#feff89", "#feff76", "#feff62", "#ffff45", "#ffff00",
+		// The approximation must follow the source curve closely, so sampled
+		// colors should stay within one 8-bit step of the original gradient.
+		reference := g0.Colors(36)
+		approximated := g1.Colors(36)
+		for i := range reference {
+			x := commonRgba8(reference[i])
+			y := commonRgba8(approximated[i])
+			for j := range x {
+				delta := int(x[j]) - int(y[j])
+				if delta < 0 {
+					delta = -delta
+				}
+				if delta > 1 {
+					t.Errorf("index %d: %s vs %s (channel %d differs by %d)",
+						i, reference[i].HexString(), approximated[i].HexString(), j, delta)
+					break
+				}
+			}
 		}
-		testSlice(t, expected, colors2hex(g1.Colors(36)))
 	}
 }

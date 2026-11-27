@@ -1,141 +1,236 @@
 package colorgrad
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 const (
-	maxDepth = 8
-	seeds    = 36
+	// Number of interior probes used to verify a candidate segment before it
+	// is accepted. The worst probe also becomes the next split point.
+	linSamples = 15
+
+	// Fraction of the requested threshold that refinement targets. The
+	// remaining margin absorbs the error that can hide between probes, so the
+	// finished gradient stays below the threshold even when sampled at points
+	// the refinement never evaluated.
+	linSafety = 0.6
+
+	// Hard limits that keep refinement bounded even for pathological curves
+	// such as hard edges or 8-bit quantized presets.
+	linMaxDepth  = 24
+	linMaxStops  = 4096
+	linJumpIter  = 48
+	linJumpWidth = 1e-9
 )
 
 type gradFn func(t float64) Color
 
-func linearize(grad gradFn, dmin, dmax, threshold float64) Gradient {
-	if math.IsNaN(threshold) || math.IsInf(threshold, 0) {
-		threshold = 0.007
-	} else {
-		threshold = clamp(threshold, 0.001, 0.035)
+type linStop struct {
+	t float64
+	c Color
+}
+
+type linearizer struct {
+	grad      gradFn
+	target    float64
+	minWidth  float64
+	jumpWidth float64
+	stops     []linStop
+}
+
+// linearize converts an arbitrary gradient function into a piecewise-linear
+// (in RGBA space) gradient whose error stays below threshold.
+//
+// The curve is refined per interval with adaptive sampling: a candidate
+// segment is accepted only after every probe along it is within target error,
+// and otherwise it is split at the worst probe. Because acceptance is checked
+// at many points instead of only the midpoint, S-shaped segments, segments
+// that span a kink, and segments whose error peaks off-center are all caught.
+func linearize(grad gradFn, breaks []float64, dmin, dmax, threshold float64) Gradient {
+	threshold = normalizeThreshold(threshold)
+
+	if math.IsNaN(dmin) || math.IsNaN(dmax) || math.IsInf(dmin, 0) || math.IsInf(dmax, 0) || !(dmax > dmin) {
+		return newLinearGradient([]Color{grad(dmin).Clamp()}, []float64{dmin}, BlendRgb)
 	}
 
-	t0 := dmin
-	c0 := grad(t0).Clamp()
-	sf := newStreamFilter(threshold, t0, c0, 500)
+	// Breakpoints are positions where the source curve changes shape (stops,
+	// kinks, hard edges). Pinning them as mandatory stops keeps a corner from
+	// being smeared across a single straight segment.
+	knots := make([]float64, 0, len(breaks)+2)
+	knots = append(knots, dmin)
+	if len(breaks) > 0 {
+		bs := slices.Clone(breaks)
+		slices.Sort(bs)
+		for _, t := range bs {
+			if t > knots[len(knots)-1] && t < dmax {
+				knots = append(knots, t)
+			}
+		}
+	}
+	knots = append(knots, dmax)
 
-	// Adaptive sampling
-	for i := 1; i <= seeds; i++ {
-		t1 := dmin + (dmax-dmin)*(float64(i)/float64(seeds))
-		c1 := grad(t1).Clamp()
-
-		// Subdivide interval [t0, t1]
-		subdivide(grad, t0, t1, c0, c1, threshold, 0, sf)
-
-		// Push right seed boundary
-		sf.push(t1, c1)
-
-		t0 = t1
-		c0 = c1
+	lz := &linearizer{
+		grad:      grad,
+		target:    linSafety * threshold,
+		minWidth:  (dmax - dmin) * 1e-12,
+		jumpWidth: (dmax - dmin) * linJumpWidth,
+		stops:     make([]linStop, 0, 64),
 	}
 
-	positions := sf.finish()
-	colors := make([]Color, len(positions))
-	for i := range positions {
-		colors[i] = grad(positions[i]).Clamp()
+	for i := 0; i+1 < len(knots); i++ {
+		a, b := knots[i], knots[i+1]
+		ca := grad(a).Clamp()
+		cb := grad(b).Clamp()
+		if i == 0 {
+			lz.stops = append(lz.stops, linStop{a, ca})
+		}
+		lz.refine(a, b, ca, cb, 0)
+	}
+
+	positions := make([]float64, len(lz.stops))
+	colors := make([]Color, len(lz.stops))
+	for i, s := range lz.stops {
+		positions[i] = s.t
+		colors[i] = s.c
 	}
 
 	return newLinearGradient(colors, positions, BlendRgb)
 }
 
-func subdivide(
-	grad gradFn,
-	t0, t1 float64,
-	c0, c1 Color,
-	threshold float64,
-	depth int,
-	sf *streamFilter,
-) {
-	if depth > maxDepth {
+func normalizeThreshold(threshold float64) float64 {
+	if math.IsNaN(threshold) || math.IsInf(threshold, 0) {
+		return 0.007
+	}
+	return clamp(threshold, 0.001, 0.035)
+}
+
+// refine accepts [a, b] as a straight segment when every probe lies within the
+// target error, otherwise it splits and recurses.
+func (lz *linearizer) refine(a, b float64, ca, cb Color, depth int) {
+	width := b - a
+	if depth >= linMaxDepth || len(lz.stops) >= linMaxStops || width <= lz.minWidth {
+		lz.stops = append(lz.stops, linStop{b, cb})
 		return
 	}
 
-	mid := (t0 + t1) / 2.0
-	cMidActual := grad(mid).Clamp()
-	cMidLinear := blendRgb(c0, c1, 0.5)
-
-	if colorDiff(cMidActual, cMidLinear) > threshold {
-		// Left branch (t0 -> mid)
-		subdivide(grad, t0, mid, c0, cMidActual, threshold, depth+1, sf)
-
-		// In-order midpoint push
-		sf.push(mid, cMidActual)
-
-		// Right branch (mid -> t1)
-		subdivide(grad, mid, t1, cMidActual, c1, threshold, depth+1, sf)
-	}
-}
-
-// streamFilter is a streaming pruner that maintains a 3-point sliding window
-// with cached colors to perform on-the-fly collinear pruning and deduplication.
-type streamFilter struct {
-	threshold float64
-	committed []float64
-	colorA    Color
-
-	// Pending candidate
-	hasCandidate bool
-	candT        float64
-	candColor    Color
-}
-
-func newStreamFilter(threshold, lo float64, initialColor Color, capacity int) *streamFilter {
-	committed := make([]float64, 0, capacity)
-	committed = append(committed, lo)
-	return &streamFilter{
-		threshold: threshold,
-		committed: committed,
-		colorA:    initialColor,
-	}
-}
-
-func (sf *streamFilter) push(c float64, colorC Color) {
-	a := sf.committed[len(sf.committed)-1]
-
-	// Skip duplicates close to last committed point
-	if math.Abs(c-a) < epsilon {
+	worst, frac, cworst := lz.probe(a, b, ca, cb)
+	if worst <= lz.target {
+		lz.stops = append(lz.stops, linStop{b, cb})
 		return
 	}
 
-	if sf.hasCandidate {
-		b, colorB := sf.candT, sf.candColor
-
-		// Deduplicate candidate against incoming point
-		if math.Abs(c-b) < epsilon {
-			sf.candT, sf.candColor = c, colorC
-			return
-		}
-
-		// Evaluate if candidate B is collinear between A and C using cached colors
-		lerpFactor := (b - a) / (c - a)
-		cCurrLinear := blendRgb(sf.colorA, colorC, lerpFactor)
-
-		if colorDiff(colorB, cCurrLinear) > sf.threshold {
-			// B is essential -> commit B and update last committed color A
-			sf.committed = append(sf.committed, b)
-			sf.colorA = colorB
-		}
-		// If B is collinear, it drops automatically when C replaces it
+	// A segment that cannot be approximated no matter how it is split is
+	// hiding a discontinuity (for example an 8-bit quantized preset, or a
+	// sharp gradient). Refining such a segment produces an unbounded number
+	// of stops, so isolate the jump between two nearly coincident stops
+	// instead of binary-searching it down to the depth limit.
+	if jp, jq, cjp, cjq, ok := lz.locateJump(a, b, ca, cb, frac); ok && jp > a && jq < b {
+		lz.refine(a, jp, ca, cjp, depth+1)
+		lz.stops = append(lz.stops, linStop{jq, cjq})
+		lz.refine(jq, b, cjq, cb, depth+1)
+		return
 	}
 
-	sf.hasCandidate = true
-	sf.candT, sf.candColor = c, colorC
+	split := a + width*frac
+	if !(split > a && split < b) {
+		split = a + width*0.5
+	}
+	if !(split > a && split < b) {
+		lz.stops = append(lz.stops, linStop{b, cb})
+		return
+	}
+
+	lz.refine(a, split, ca, cworst, depth+1)
+	lz.refine(split, b, cworst, cb, depth+1)
 }
 
-func (sf *streamFilter) finish() []float64 {
-	if sf.hasCandidate {
-		a := sf.committed[len(sf.committed)-1]
-		if math.Abs(sf.candT-a) >= epsilon {
-			sf.committed = append(sf.committed, sf.candT)
+// locateJump bisects the neighbourhood of the worst probe and reports whether
+// the curve has a step there. At a discontinuity the probe's own interval
+// contains a jump that bisection can make arbitrarily small; on a merely steep
+// curve the jump also shrinks, but the bracket stays wide. The two are told
+// apart by how much of the bracketed range the jump occupies.
+func (lz *linearizer) locateJump(a, b float64, ca, cb Color, frac float64) (jp, jq float64, cjp, cjq Color, ok bool) {
+	width := b - a
+	// Bracket the worst probe: the step is within one probe spacing of it.
+	p := a + width*(frac-1.0/float64(linSamples+1))
+	q := a + width*(frac+1.0/float64(linSamples+1))
+	if p < a {
+		p = a
+	}
+	if q > b {
+		q = b
+	}
+	if !(q > p) {
+		return 0, 0, Color{}, Color{}, false
+	}
+	cp := lz.grad(p).Clamp()
+	cq := lz.grad(q).Clamp()
+
+	jumpCut := lz.target
+	origWidth := q - p
+	// The step must be located to a small fraction of the original bracket;
+	// a steep but continuous curve cannot shrink its span that far.
+	maxSpan := origWidth * 0.02
+	stopWidth := lz.jumpWidth
+	if maxSpan < stopWidth {
+		maxSpan = stopWidth
+	}
+
+	for iter := 0; iter < linJumpIter; iter++ {
+		if q-p <= stopWidth {
+			return p, q, cp, cq, true
+		}
+		m := p + (q-p)*0.5
+		if !(m > p && m < q) {
+			return p, q, cp, cq, true
+		}
+		cm := lz.grad(m).Clamp()
+		dLeft := colorDiff(cp, cm)
+		dRight := colorDiff(cm, cq)
+
+		// Both sides shrink together: steep but continuous.
+		if dLeft <= jumpCut && dRight <= jumpCut {
+			return 0, 0, Color{}, Color{}, false
+		}
+
+		// One side is flat while the other keeps the jump: the step is in the
+		// other half.
+		if dLeft <= jumpCut {
+			p, cp = m, cm
+			continue
+		}
+		if dRight <= jumpCut {
+			q, cq = m, cm
+			continue
+		}
+
+		// Both sides are large: the bracket straddles two nearby steps (as in
+		// a quantized preset, where stair treads meet). Let ordinary
+		// refinement narrow the bracket to a single step first.
+		return 0, 0, Color{}, Color{}, false
+	}
+
+	if q-p > maxSpan {
+		return 0, 0, Color{}, Color{}, false
+	}
+	return p, q, cp, cq, true
+}
+
+// probe measures the deviation between the source curve and the straight
+// segment [a, b] at a fixed set of interior fractions, and reports the worst
+// one along with its color.
+func (lz *linearizer) probe(a, b float64, ca, cb Color) (worst, frac float64, cworst Color) {
+	frac = 0.5
+	cworst = cb
+	for k := 1; k <= linSamples; k++ {
+		f := float64(k) / float64(linSamples+1)
+		c := lz.grad(a + (b-a)*f).Clamp()
+		if d := colorDiff(c, blendRgb(ca, cb, f)); d > worst {
+			worst, frac, cworst = d, f, c
 		}
 	}
-	return sf.committed
+	return
 }
 
 // colorDiff is the Euclidean distance between two colors in RGBA space,

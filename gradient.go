@@ -167,10 +167,17 @@ func (g Gradient) Sharp(segment uint, smoothness float64) Gradient {
 //
 //	`threshold`: [0.001 .. 0.035]. Smaller value will results in smoother color transition (more color stops).
 func (g Gradient) Linearize(threshold float64) Gradient {
-	fn := func(t float64) Color {
-		return g.At(t)
+	var breaks []float64
+	if p, ok := g.Core.(breakpointProvider); ok {
+		breaks = p.segmentBreakpoints()
 	}
-	return linearize(fn, g.Min, g.Max, threshold)
+	return linearize(g.At, breaks, g.Min, g.Max, threshold)
+}
+
+// breakpointProvider is implemented by gradient cores that know where their
+// underlying curve changes shape. Linearize pins those positions as stops.
+type breakpointProvider interface {
+	segmentBreakpoints() []float64
 }
 
 type zeroGradient struct {

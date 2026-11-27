@@ -69,6 +69,16 @@ func arr8(r, g, b, a uint8) [4]uint8 {
 	return [4]uint8{r, g, b, a}
 }
 
+// commonRgba8 returns the channels of two colors in the same representation,
+// so colors with and without an explicit alpha can be compared channel-wise.
+func commonRgba8(c colorgrad.Color) [4]uint8 {
+	r, g, b, a := c.RGBA255()
+	if a == 255 {
+		return [4]uint8{r, g, b}
+	}
+	return [4]uint8{r, g, b, a}
+}
+
 func arr32(r, g, b, a uint32) [4]uint32 {
 	return [4]uint32{r, g, b, a}
 }

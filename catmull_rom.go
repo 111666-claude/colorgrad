@@ -109,6 +109,12 @@ func newCatmullRomGradient(colors []Color, positions []float64, space BlendMode)
 	}
 }
 
+// segmentBreakpoints reports the positions where the gradient's curve can have
+// a kink. Linearize uses them as mandatory stops.
+func (g *CatmullRomGradient) segmentBreakpoints() []float64 {
+	return g.positions
+}
+
 func (g *CatmullRomGradient) At(t float64) Color {
 	if math.IsNaN(t) {
 		return Color{A: 1}

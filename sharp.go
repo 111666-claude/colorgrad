@@ -55,6 +55,13 @@ func (sg SharpGradient) At(t float64) Color {
 	return blendRgb(a, b, t)
 }
 
+// segmentBreakpoints reports the hard edges of the gradient. Linearize pins
+// these positions so each jump stays confined to its own tiny interval instead
+// of being spread over a smooth-looking ramp.
+func (sg SharpGradient) segmentBreakpoints() []float64 {
+	return sg.positions
+}
+
 func newSharpGradient(colorsIn []Color, dmin, dmax float64, smoothness float64) Gradient {
 	n := len(colorsIn)
 	colors := make([]Color, n*2)

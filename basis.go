@@ -76,6 +76,12 @@ func (g *BasisGradient) At(t float64) Color {
 	}
 }
 
+// segmentBreakpoints reports the positions where the gradient's curve can have
+// a kink. Linearize uses them as mandatory stops.
+func (g *BasisGradient) segmentBreakpoints() []float64 {
+	return g.positions
+}
+
 func newBasisGradient(colors []Color, positions []float64, mode BlendMode) Gradient {
 	pos := slices.Clone(positions)
 	n := len(colors)

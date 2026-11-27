@@ -68,6 +68,13 @@ func (lg *LinearGradient) Stops() iter.Seq2[float64, [4]float64] {
 	}
 }
 
+// segmentBreakpoints reports the positions where the gradient's curve can have
+// a kink. Linearize uses them as mandatory stops so a corner is never smeared
+// across a single straight segment.
+func (lg *LinearGradient) segmentBreakpoints() []float64 {
+	return lg.positions
+}
+
 func newLinearGradient(colors []Color, positions []float64, mode BlendMode) Gradient {
 	pos := slices.Clone(positions)
 

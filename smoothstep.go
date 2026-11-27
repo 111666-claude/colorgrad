@@ -53,6 +53,12 @@ func (sg *SmoothstepGradient) At(t float64) Color {
 	}
 }
 
+// segmentBreakpoints reports the positions where the gradient's curve can have
+// a kink. Linearize uses them as mandatory stops.
+func (sg *SmoothstepGradient) segmentBreakpoints() []float64 {
+	return sg.positions
+}
+
 // colors & positions guaranteed to have the same length (minimum 2)
 func newSmoothstepGradient(colors []Color, positions []float64, mode BlendMode) Gradient {
 	pos := slices.Clone(positions)
