@@ -72,7 +72,7 @@ func normalizeAngle(t float64) float64 {
 	return t
 }
 
-func convertColors(colorsIn []Color, mode BlendMode) [][4]float64 {
+func convertColors(colorsIn []Color, mode BlendMode, premultiplied bool) [][4]float64 {
 	colors := make([][4]float64, len(colorsIn))
 	for i, col := range colorsIn {
 		switch mode {
@@ -85,8 +85,44 @@ func convertColors(colorsIn []Color, mode BlendMode) [][4]float64 {
 		case BlendOklab:
 			colors[i] = col.Oklab()
 		}
+		if premultiplied {
+			colors[i] = premultiply(colors[i])
+		}
 	}
 	return colors
+}
+
+// Multiply the color components (in the working color space) by alpha.
+func premultiply(c [4]float64) [4]float64 {
+	a := c[3]
+	return [4]float64{c[0] * a, c[1] * a, c[2] * a, a}
+}
+
+// Convert interpolated components (in the working color space) back to a
+// Color, undoing the alpha premultiplication when enabled.
+//
+// A zero (or negative, e.g. from spline overshoot) alpha yields a fully
+// transparent black, so transparent endpoints give a deterministic result.
+func toColor(a, b, c, d float64, mode BlendMode, premultiplied bool) Color {
+	if premultiplied {
+		if d <= 0 {
+			return Color{}
+		}
+		a /= d
+		b /= d
+		c /= d
+	}
+	switch mode {
+	case BlendRgb:
+		return Color{R: a, G: b, B: c, A: d}
+	case BlendLinearRgb:
+		return LinearRgb(a, b, c, d)
+	case BlendLab:
+		return Lab(a, b, c, d).Clamp()
+	case BlendOklab:
+		return Oklab(a, b, c, d).Clamp()
+	}
+	return Color{}
 }
 
 func linearInterpolate(a, b [4]float64, t float64) (i, j, k, l float64) {

@@ -11,6 +11,7 @@ type GradientBuilder struct {
 	positions          []float64
 	mode               BlendMode
 	interpolation      Interpolation
+	premultiplied      bool
 	invalidHtmlColors  []string
 	invalidCssGradient bool
 	clean              bool
@@ -78,11 +79,21 @@ func (gb *GradientBuilder) Interpolation(mode Interpolation) *GradientBuilder {
 	return gb
 }
 
+// Premultiplied enables (or disables) premultiplied-alpha color
+// interpolation: color components are multiplied by alpha before
+// interpolation and divided back afterwards. This avoids color fringes
+// when blending transparent colors. It is disabled by default.
+func (gb *GradientBuilder) Premultiplied(enable bool) *GradientBuilder {
+	gb.premultiplied = enable
+	return gb
+}
+
 func (gb *GradientBuilder) Reset() *GradientBuilder {
 	gb.colors = gb.colors[:0]
 	gb.positions = gb.positions[:0]
 	gb.mode = BlendRgb
 	gb.interpolation = InterpolationLinear
+	gb.premultiplied = false
 	gb.invalidHtmlColors = gb.invalidHtmlColors[:0]
 	gb.invalidCssGradient = false
 	gb.clean = false
@@ -178,18 +189,18 @@ func (gb *GradientBuilder) Build() (Gradient, error) {
 	}
 
 	if gb.interpolation == InterpolationLinear {
-		return newLinearGradient(gb.colors, gb.positions, gb.mode), nil
+		return newLinearGradient(gb.colors, gb.positions, gb.mode, gb.premultiplied), nil
 	}
 
 	if gb.interpolation == InterpolationSmoothstep {
-		return newSmoothstepGradient(gb.colors, gb.positions, gb.mode), nil
+		return newSmoothstepGradient(gb.colors, gb.positions, gb.mode, gb.premultiplied), nil
 	}
 
 	if gb.interpolation == InterpolationBasis {
-		return newBasisGradient(gb.colors, gb.positions, gb.mode), nil
+		return newBasisGradient(gb.colors, gb.positions, gb.mode, gb.premultiplied), nil
 	}
 
-	return newCatmullRomGradient(gb.colors, gb.positions, gb.mode), nil
+	return newCatmullRomGradient(gb.colors, gb.positions, gb.mode, gb.premultiplied), nil
 }
 
 // For testing purposes

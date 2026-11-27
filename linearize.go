@@ -41,7 +41,7 @@ func linearize(grad gradFn, dmin, dmax, threshold float64) Gradient {
 		colors[i] = grad(positions[i]).Clamp()
 	}
 
-	return newLinearGradient(colors, positions, BlendRgb)
+	return newLinearGradient(colors, positions, BlendRgb, false)
 }
 
 func subdivide(

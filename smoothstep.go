@@ -5,13 +5,14 @@ import (
 )
 
 type SmoothstepGradient struct {
-	colors    [][4]float64
-	positions []float64
-	min       float64
-	max       float64
-	mode      BlendMode
-	first     Color
-	last      Color
+	colors        [][4]float64
+	positions     []float64
+	min           float64
+	max           float64
+	mode          BlendMode
+	premultiplied bool
+	first         Color
+	last          Color
 }
 
 func (sg SmoothstepGradient) At(t float64) Color {
@@ -48,29 +49,19 @@ func (sg SmoothstepGradient) At(t float64) Color {
 	t = (t - p1) / (p2 - p1)
 	a, b, c, d := smoothstepInterpolate(sg.colors[low-1], sg.colors[low], t)
 
-	switch sg.mode {
-	case BlendRgb:
-		return Color{R: a, G: b, B: c, A: d}
-	case BlendLinearRgb:
-		return LinearRgb(a, b, c, d)
-	case BlendLab:
-		return Lab(a, b, c, d).Clamp()
-	case BlendOklab:
-		return Oklab(a, b, c, d).Clamp()
-	}
-
-	return Color{}
+	return toColor(a, b, c, d, sg.mode, sg.premultiplied)
 }
 
-func newSmoothstepGradient(colors []Color, positions []float64, mode BlendMode) Gradient {
+func newSmoothstepGradient(colors []Color, positions []float64, mode BlendMode, premultiplied bool) Gradient {
 	gradbase := SmoothstepGradient{
-		colors:    convertColors(colors, mode),
-		positions: positions,
-		min:       positions[0],
-		max:       positions[len(positions)-1],
-		mode:      mode,
-		first:     colors[0],
-		last:      colors[len(colors)-1],
+		colors:        convertColors(colors, mode, premultiplied),
+		positions:     positions,
+		min:           positions[0],
+		max:           positions[len(positions)-1],
+		mode:          mode,
+		premultiplied: premultiplied,
+		first:         colors[0],
+		last:          colors[len(colors)-1],
 	}
 
 	return Gradient{

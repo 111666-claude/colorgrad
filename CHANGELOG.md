@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New `GradientBuilder.Premultiplied()` for premultiplied-alpha color interpolation
+
 ## v0.11.1
 
 - Fix bug in Lab conversion

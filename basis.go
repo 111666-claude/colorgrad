@@ -7,13 +7,14 @@ import (
 // https://github.com/d3/d3-interpolate/blob/master/src/basis.js
 
 type BasisGradient struct {
-	colors    [][4]float64
-	positions []float64
-	min       float64
-	max       float64
-	mode      BlendMode
-	first     Color
-	last      Color
+	colors        [][4]float64
+	positions     []float64
+	min           float64
+	max           float64
+	mode          BlendMode
+	premultiplied bool
+	first         Color
+	last          Color
 }
 
 func (lg BasisGradient) At(t float64) Color {
@@ -72,29 +73,19 @@ func (lg BasisGradient) At(t float64) Color {
 	c := xx(val0[2], val1[2], 2)
 	d := xx(val0[3], val1[3], 3)
 
-	switch lg.mode {
-	case BlendRgb:
-		return Color{R: a, G: b, B: c, A: d}
-	case BlendLinearRgb:
-		return LinearRgb(a, b, c, d)
-	case BlendLab:
-		return Lab(a, b, c, d).Clamp()
-	case BlendOklab:
-		return Oklab(a, b, c, d).Clamp()
-	}
-
-	return Color{}
+	return toColor(a, b, c, d, lg.mode, lg.premultiplied)
 }
 
-func newBasisGradient(colors []Color, positions []float64, mode BlendMode) Gradient {
+func newBasisGradient(colors []Color, positions []float64, mode BlendMode, premultiplied bool) Gradient {
 	gradbase := BasisGradient{
-		colors:    convertColors(colors, mode),
-		positions: positions,
-		min:       positions[0],
-		max:       positions[len(positions)-1],
-		mode:      mode,
-		first:     colors[0],
-		last:      colors[len(colors)-1],
+		colors:        convertColors(colors, mode, premultiplied),
+		positions:     positions,
+		min:           positions[0],
+		max:           positions[len(positions)-1],
+		mode:          mode,
+		premultiplied: premultiplied,
+		first:         colors[0],
+		last:          colors[len(colors)-1],
 	}
 
 	return Gradient{

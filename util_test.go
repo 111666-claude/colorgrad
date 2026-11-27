@@ -78,12 +78,12 @@ func Test_Utils(t *testing.T) {
 		Hsl(120, 0.3, 0.2, 1),
 	}
 
-	for i, arr := range convertColors(colors, BlendRgb) {
+	for i, arr := range convertColors(colors, BlendRgb, false) {
 		col := Rgb(spreadF64(arr))
 		test(t, colors[i].HexString(), col.HexString())
 	}
 
-	for i, arr := range convertColors(colors, BlendLinearRgb) {
+	for i, arr := range convertColors(colors, BlendLinearRgb, false) {
 		col := LinearRgb(spreadF64(arr))
 		test(t, colors[i].HexString(), col.HexString())
 	}

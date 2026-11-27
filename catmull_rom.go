@@ -47,16 +47,17 @@ func toCatmullRomSegments(values []float64) [][4]float64 {
 }
 
 type CatmullRomGradient struct {
-	segments  [][4][4]float64
-	positions []float64
-	min       float64
-	max       float64
-	mode      BlendMode
-	first     Color
-	last      Color
+	segments      [][4][4]float64
+	positions     []float64
+	min           float64
+	max           float64
+	mode          BlendMode
+	premultiplied bool
+	first         Color
+	last          Color
 }
 
-func newCatmullRomGradient(colors []Color, positions []float64, space BlendMode) Gradient {
+func newCatmullRomGradient(colors []Color, positions []float64, space BlendMode, premultiplied bool) Gradient {
 	n := len(colors)
 	a := make([]float64, n)
 	b := make([]float64, n)
@@ -73,6 +74,9 @@ func newCatmullRomGradient(colors []Color, positions []float64, space BlendMode)
 			arr = col.Lab()
 		case BlendOklab:
 			arr = col.Oklab()
+		}
+		if premultiplied {
+			arr = premultiply(arr)
 		}
 		a[i] = arr[0]
 		b[i] = arr[1]
@@ -95,13 +99,14 @@ func newCatmullRomGradient(colors []Color, positions []float64, space BlendMode)
 	min := positions[0]
 	max := positions[n-1]
 	gradbase := CatmullRomGradient{
-		segments:  segments,
-		positions: positions,
-		min:       min,
-		max:       max,
-		mode:      space,
-		first:     colors[0],
-		last:      colors[len(colors)-1],
+		segments:      segments,
+		positions:     positions,
+		min:           min,
+		max:           max,
+		mode:          space,
+		premultiplied: premultiplied,
+		first:         colors[0],
+		last:          colors[len(colors)-1],
 	}
 	return Gradient{
 		Core: gradbase,
@@ -155,16 +160,5 @@ func (g CatmullRomGradient) At(t float64) Color {
 	c := seg_c[0]*t3 + seg_c[1]*t2 + seg_c[2]*t1 + seg_c[3]
 	d := seg_d[0]*t3 + seg_d[1]*t2 + seg_d[2]*t1 + seg_d[3]
 
-	switch g.mode {
-	case BlendRgb:
-		return Color{R: a, G: b, B: c, A: d}
-	case BlendLinearRgb:
-		return LinearRgb(a, b, c, d)
-	case BlendLab:
-		return Lab(a, b, c, d).Clamp()
-	case BlendOklab:
-		return Oklab(a, b, c, d).Clamp()
-	}
-
-	return Color{}
+	return toColor(a, b, c, d, g.mode, g.premultiplied)
 }

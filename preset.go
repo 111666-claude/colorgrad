@@ -196,7 +196,7 @@ func preset(data []uint32) Gradient {
 		colors[i] = u32ToColor(v)
 	}
 	pos := linspace(0, 1, uint(len(colors)))
-	return newBasisGradient(colors, pos, BlendRgb)
+	return newBasisGradient(colors, pos, BlendRgb, false)
 }
 
 // Diverging

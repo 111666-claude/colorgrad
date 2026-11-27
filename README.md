@@ -175,6 +175,23 @@ grad, err := colorgrad.NewGradient().
 `InterpolationBasis`
 ![interpolation-basis](doc/images/interpolation-basis2.png)
 
+### Premultiplied Alpha
+
+When blending colors with different alpha values, interpolating the RGB
+channels directly can leave color fringes in the semi-transparent region.
+Enabling `Premultiplied` interpolates the color components multiplied by
+alpha instead, and divides the alpha back out afterwards. It works with
+every blending mode and interpolation mode, and is disabled by default.
+
+```go
+grad, err := colorgrad.NewGradient().
+    Colors(colorgrad.Rgb(1, 0, 0, 0), colorgrad.Rgb(0, 0, 1, 1)).
+    Premultiplied(true).
+    Build()
+
+grad.At(0.5) // blue at alpha 0.5, instead of half red + half blue
+```
+
 ## Preset Gradients
 
 See [PRESET.md](PRESET.md)
