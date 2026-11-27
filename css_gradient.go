@@ -8,20 +8,37 @@ import (
 )
 
 func parseCss(s string) ([]cssGradientStop, bool) {
+	stops, _, ok := parseCssEx(s)
+	return stops, ok
+}
+
+// parseCssEx behaves like parseCss but additionally returns the indices of the
+// standalone transition hint stops (position tokens without a color) in the
+// returned slice. The hint stops still receive the same midpoint color as
+// parseCss does, so existing callers see identical output.
+func parseCssEx(s string) ([]cssGradientStop, []int, bool) {
 	stops := []cssGradientStop{}
+	hintIdx := []int{}
 
 	for _, stop := range splitByComma(s) {
+		n0 := len(stops)
 		if !prosesStop(&stops, splitBySpace(stop)) {
-			return stops, false
+			return stops, hintIdx, false
+		}
+		// A freshly appended stop without a color is a transition hint.
+		for i := n0; i < len(stops); i++ {
+			if stops[i].color == nil {
+				hintIdx = append(hintIdx, i)
+			}
 		}
 	}
 
 	if len(stops) == 0 {
-		return stops, false
+		return stops, hintIdx, false
 	}
 
 	if stops[0].color == nil {
-		return stops, false
+		return stops, hintIdx, false
 	}
 
 	if stops[0].pos == nil {
@@ -38,7 +55,7 @@ func parseCss(s string) ([]cssGradientStop, bool) {
 
 		if stop.color == nil {
 			if stops[i+1].color == nil {
-				return stops, false
+				return stops, hintIdx, false
 			}
 			stops[i].color = ptrColor(blendRgb(*stops[i-1].color, *stops[i+1].color, 0.5))
 		}
@@ -46,6 +63,10 @@ func parseCss(s string) ([]cssGradientStop, bool) {
 
 	if *stops[0].pos > 0.0 {
 		stops = append([]cssGradientStop{{ptr(0.0), stops[0].color}}, stops...)
+		// Prepending one stop shifts every recorded hint index by one.
+		for i := range hintIdx {
+			hintIdx[i]++
+		}
 	}
 
 	if *stops[len(stops)-1].pos < 1.0 {
@@ -71,11 +92,11 @@ func parseCss(s string) ([]cssGradientStop, bool) {
 
 	for _, stop := range stops {
 		if stop.color == nil || stop.pos == nil {
-			return stops, false
+			return stops, hintIdx, false
 		}
 	}
 
-	return stops, true
+	return stops, hintIdx, true
 }
 
 func ptr(f float64) *float64 {
@@ -186,12 +207,19 @@ func splitBySpace(s string) []string {
 func parsePos(s string) (float64, bool) {
 	if strings.HasSuffix(s, "%") {
 		f, ok := parseFloat(s[:len(s)-1])
-		if ok {
+		if ok && cssFinite(f) {
 			return f / 100, true
 		}
 		return 0, false
 	}
 
 	f, ok := parseFloat(s)
+	if !ok || !cssFinite(f) {
+		return 0, false
+	}
 	return f, ok
+}
+
+func cssFinite(f float64) bool {
+	return !math.IsNaN(f) && !math.IsInf(f, 0)
 }

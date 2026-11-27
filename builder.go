@@ -14,6 +14,7 @@ type GradientBuilder struct {
 	invalidHtmlColors  []string
 	invalidCssGradient bool
 	clean              bool
+	hintPlan           *hintPlan
 }
 
 func NewGradient() *GradientBuilder {
@@ -26,6 +27,7 @@ func NewGradient() *GradientBuilder {
 }
 
 func (gb *GradientBuilder) Colors(colors ...Color) *GradientBuilder {
+	gb.hintPlan = nil
 	for _, col := range colors {
 		gb.colors = append(gb.colors, col)
 	}
@@ -34,6 +36,7 @@ func (gb *GradientBuilder) Colors(colors ...Color) *GradientBuilder {
 }
 
 func (gb *GradientBuilder) HtmlColors(htmlColors ...string) *GradientBuilder {
+	gb.hintPlan = nil
 	for _, s := range htmlColors {
 		c, err := csscolorparser.Parse(s)
 		if err != nil {
@@ -48,7 +51,8 @@ func (gb *GradientBuilder) HtmlColors(htmlColors ...string) *GradientBuilder {
 
 func (gb *GradientBuilder) Css(s string) *GradientBuilder {
 	gb.clean = false
-	stops, ok := parseCss(s)
+	gb.hintPlan = nil
+	stops, hintIdx, ok := parseCssEx(s)
 	if !ok {
 		gb.invalidCssGradient = true
 		return gb
@@ -59,10 +63,17 @@ func (gb *GradientBuilder) Css(s string) *GradientBuilder {
 		gb.colors = append(gb.colors, *st.color)
 		gb.positions = append(gb.positions, *st.pos)
 	}
+	if len(hintIdx) > 0 {
+		plan := buildHintPlan(stops, hintIdx)
+		if len(plan.colors) >= 2 && len(plan.hints) == len(plan.positions)-1 {
+			gb.hintPlan = &plan
+		}
+	}
 	return gb
 }
 
 func (gb *GradientBuilder) Domain(positions ...float64) *GradientBuilder {
+	gb.hintPlan = nil
 	gb.positions = positions
 	gb.clean = false
 	return gb
@@ -81,6 +92,7 @@ func (gb *GradientBuilder) Interpolation(mode Interpolation) *GradientBuilder {
 func (gb *GradientBuilder) Reset() *GradientBuilder {
 	gb.colors = gb.colors[:0]
 	gb.positions = gb.positions[:0]
+	gb.hintPlan = nil
 	gb.mode = BlendRgb
 	gb.interpolation = InterpolationLinear
 	gb.invalidHtmlColors = gb.invalidHtmlColors[:0]
@@ -178,6 +190,9 @@ func (gb *GradientBuilder) Build() (Gradient, error) {
 	}
 
 	if gb.interpolation == InterpolationLinear {
+		if gb.hintPlan != nil {
+			return newLinearGradientWithHints(gb.hintPlan.colors, gb.hintPlan.positions, gb.hintPlan.hints, gb.mode), nil
+		}
 		return newLinearGradient(gb.colors, gb.positions, gb.mode), nil
 	}
 

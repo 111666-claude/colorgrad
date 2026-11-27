@@ -12,6 +12,7 @@ type LinearGradient struct {
 	min, max    float64
 	mode        BlendMode
 	first, last Color
+	hints       []float64
 }
 
 func (lg *LinearGradient) At(t float64) Color {
@@ -37,10 +38,28 @@ func (lg *LinearGradient) At(t float64) Color {
 		}
 	}
 
-	p1 := lg.positions[lo-1]
+	i := lo - 1
+	p1 := lg.positions[i]
 	p2 := lg.positions[lo]
-	t = (t - p1) / (p2 - p1)
-	a, b, c, d := linearInterpolate(lg.colors[lo-1], lg.colors[lo], t)
+	span := p2 - p1
+
+	u := 0.0
+	if span > 0 {
+		u = (t - p1) / span
+	}
+	if !cssFinite(u) {
+		u = 0
+	}
+
+	// Apply the CSS transition hint easing for this segment, if any.
+	if i < len(lg.hints) {
+		if hp := lg.hints[i]; !math.IsNaN(hp) && span > 0 {
+			h := (hp - p1) / span
+			u = cssHintWeight(h, u)
+		}
+	}
+
+	a, b, c, d := linearInterpolate(lg.colors[i], lg.colors[lo], u)
 
 	switch lg.mode {
 	case BlendLinearRgb:
@@ -86,4 +105,22 @@ func newLinearGradient(colors []Color, positions []float64, mode BlendMode) Grad
 		Min:  g.min,
 		Max:  g.max,
 	}
+}
+
+// newLinearGradientWithHints builds a linear gradient that additionally eases
+// each segment according to hints. hints must have length len(positions)-1;
+// math.NaN() entries mark segments without a hint.
+func newLinearGradientWithHints(colors []Color, positions, hints []float64, mode BlendMode) Gradient {
+	grad := newLinearGradient(colors, positions, mode)
+	g := grad.Core.(*LinearGradient)
+
+	g.hints = make([]float64, len(g.positions)-1)
+	for i := range g.hints {
+		g.hints[i] = math.NaN()
+		if i < len(hints) {
+			g.hints[i] = hints[i]
+		}
+	}
+
+	return grad
 }
