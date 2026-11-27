@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- New `WriteGgr()` for writing GIMP gradient (.ggr) files
+- New `GimpGradient.Name()` and `GimpGradient.WithColors()`
+- `ParseGgr()` now preserves foreground/background endpoint types instead of resolving them once at parse time
+
 ## v0.11.1
 
 - Fix bug in Lab conversion

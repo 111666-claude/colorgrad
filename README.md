@@ -199,6 +199,28 @@ fmt.Println(name) // Abstract 1
 
 ![gimp-gradient](doc/images/ggr-abstract-1.png)
 
+### Writing GIMP Gradient
+
+`WriteGgr` writes a gradient previously parsed with `ParseGgr` back to a `.ggr`
+file. The gradient name, segment intervals and midpoints, blending/coloring
+modes, alpha values and foreground/background endpoint types are preserved, so
+the file remains editable in GIMP. Fixed endpoint colors are written with their
+original values; foreground/background endpoints stay dynamic and are resolved
+from the colors passed to `ParseGgr` (or rebound with `GimpGradient.WithColors`).
+
+```go
+import "os"
+
+file, err := os.Create("output.ggr")
+
+if err != nil {
+	panic(err)
+}
+
+defer file.Close()
+err = colorgrad.WriteGgr(file, grad)
+```
+
 ## Using the Gradient
 
 ### Get the domain
